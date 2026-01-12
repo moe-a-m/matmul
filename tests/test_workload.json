@@ -1,0 +1,21 @@
+{
+  "workload_id": "matmul_1024_fp32",
+  "type": "matrix_multiplication",
+  "parameters": {
+    "shapes": {
+      "M": 1024,
+      "N": 1024,
+      "K": 1024
+    },
+    "precision": "fp32",
+    "layout": "row_major"
+  },
+  "constraints": {
+    "max_time_ms": 5000,
+    "max_memory_mb": 512
+  },
+  "validation": {
+    "seed": 42,
+    "tolerance": 1e-5
+  }
+}

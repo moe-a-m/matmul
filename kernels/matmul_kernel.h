@@ -1,12 +1,12 @@
 #ifndef MATMUL_KERNEL_
 #define MATMUL_KERNEL_
 
-#include <stddef.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __riscv_vector
+#if defined(__riscv_vector)
 #include <riscv_vector.h>
 #endif
 
@@ -19,5 +19,17 @@
 
 #define UNROLL 4   /* set to 1, 2, or 4 */
 
+#pragma once
+
+void matmul_kernel_c(
+    const float* A,
+    const float* B,
+    float* C,
+    size_t M,
+    size_t N,
+    size_t K
+);
+
 
 #endif
+

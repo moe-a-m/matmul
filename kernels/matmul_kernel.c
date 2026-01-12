@@ -2,17 +2,26 @@
 /* ===========================
  * Counters
  * =========================== */
-static inline uint64_t rdcycle(void) {
-  uint64_t x;
-  asm volatile("rdcycle %0" : "=r"(x));
-  return x;
+static inline uint64_t read_cycle(void) {
+#if defined(__riscv)
+    uint64_t x;
+    asm volatile("read_cycle() %0" : "=r"(x));
+    return x;
+#else
+    return 0;
+#endif
 }
 
-static inline uint64_t rdinstret(void) {
-  uint64_t x;
-  asm volatile("rdinstret %0" : "=r"(x));
-  return x;
+static inline uint64_t read_instret(void) {
+#if defined(__riscv)
+    uint64_t x;
+    asm volatile("read_instret() %0" : "=r"(x));
+    return x;
+#else
+    return 0;
+#endif
 }
+
 
 /* ===========================
  * Packing
@@ -36,15 +45,17 @@ static void pack_A(const float *A, float *Ap, size_t k, size_t ii, size_t kk,
  * Kernel
  * =========================== */
 
-void matmul_rvv_packed(const float *A, const float *B, float *C, size_t m,
-                       size_t n, size_t k) {
+void matmul_kernel_c(const float *A, const float *B, float *C, size_t m,
+                     size_t n, size_t k) {
   memset(C, 0, m * n * sizeof(float));
 
-  float *Bp = aligned_alloc(64, TILE_K * TILE_N * sizeof(float));
-  float *Ap = aligned_alloc(64, TILE_M * TILE_K * sizeof(float));
+  float *Bp;
+  float *Ap;
+  posix_memalign((void**)&Bp, 64, TILE_K * TILE_N * sizeof(float));
+  posix_memalign((void**)&Ap, 64, TILE_M * TILE_K * sizeof(float));
 
-  uint64_t c0 = rdcycle();
-  uint64_t i0 = rdinstret();
+  uint64_t c0 = read_cycle();
+  uint64_t i0 = read_instret();
 
   for (size_t ii = 0; ii < m; ii += TILE_M) {
     for (size_t jj = 0; jj < n; jj += TILE_N) {
@@ -137,8 +148,8 @@ void matmul_rvv_packed(const float *A, const float *B, float *C, size_t m,
     }
   }
 
-  uint64_t c1 = rdcycle();
-  uint64_t i1 = rdinstret();
+  uint64_t c1 = read_cycle();
+  uint64_t i1 = read_instret();
 
   /* Optional: expose these via globals if needed */
   (void)c0;

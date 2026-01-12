@@ -1,0 +1,26 @@
+{
+  "latency_ms": 674.4087252,
+  "throughput_gflops": 3.1842465373845075,
+  "ops_per_second": 3184246537.3845077,
+  "output_hash": "e8597badea2b41af34bc2187df6b306dbcf94eba606e05dcbb3b7b2a07057aa4",
+  "max_error": 0.000091552734,
+  "correctness": true,
+  "workload_info": {
+    "matrix_size": [
+      1024,
+      1024,
+      1024
+    ],
+    "total_ops": 2147483648,
+    "memory_usage_mb": 0.01171875
+  },
+  "performance_analysis": {
+    "speedup_vs_naive": 13.051309003141586,
+    "blas_speedup": 1.0,
+    "tiled_speedup": 1.0,
+    "vectorized_speedup": 1.0,
+    "parallel_speedup": 1.0,
+    "memory_bandwidth_gbps": 17.793364100444172,
+    "compute_efficiency": 0.03184246537384507
+  }
+}
