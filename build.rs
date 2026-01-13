@@ -20,14 +20,10 @@ fn main() {
             .cpp(true)
             .opt_level(3)
             .flag("-std=c++17")
-            .include("/opt/tenstorrent/include")
-            .include("/usr/include/tt_metal")
+            .flag("-march=native")
+            .flag("-mtune=native")
+            .flag("-funroll-loops")
             .compile("tt_xla_backend");
-        
-        println!("cargo:rustc-link-search=/opt/tenstorrent/lib");
-        println!("cargo:rustc-link-lib=tt_metal");
-        println!("cargo:rustc-link-lib=tt_eager");
-        println!("cargo:rustc-link-lib=stdc++");
     }
 
     // Add Homebrew library paths for macOS
