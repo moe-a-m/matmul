@@ -32,6 +32,6 @@ fn main() {
         println!("cargo:rustc-link-lib=blis");
     }
 
-    print!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
-    print!("cargo:rerun-if-changed=kernels/gpu_kernel.c");
+    println!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
+    println!("cargo:rerun-if-changed=kernels/gpu_kernel.c");
 }
