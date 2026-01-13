@@ -49,10 +49,13 @@ void matmul_kernel_c(const float *A, const float *B, float *C, size_t m,
                      size_t n, size_t k) {
   memset(C, 0, m * n * sizeof(float));
 
-  float *Bp;
-  float *Ap;
-  posix_memalign((void**)&Bp, 64, TILE_K * TILE_N * sizeof(float));
-  posix_memalign((void**)&Ap, 64, TILE_M * TILE_K * sizeof(float));
+  float *Bp = NULL;
+  float *Ap = NULL;
+  if (posix_memalign((void**)&Bp, 64, TILE_K * TILE_N * sizeof(float)) != 0) return;
+  if (posix_memalign((void**)&Ap, 64, TILE_M * TILE_K * sizeof(float)) != 0) {
+    free(Bp);
+    return;
+  }
 
   uint64_t c0 = read_cycle();
   uint64_t i0 = read_instret();
