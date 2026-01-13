@@ -200,19 +200,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hard-hack-matmul"
-version = "0.1.0"
-dependencies = [
- "cc",
- "clap",
- "pkg-config",
- "rayon",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -235,6 +222,19 @@ name = "libc"
 version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
+
+[[package]]
+name = "matmul"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "clap",
+ "pkg-config",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2",
+]
 
 [[package]]
 name = "memchr"
