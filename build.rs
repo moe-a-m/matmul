@@ -16,10 +16,8 @@ fn main() {
     if std::env::var("CARGO_FEATURE_GPU").is_ok() {
         let mut gpu_build = cc::Build::new();
         gpu_build
-            .file("kernels/tt_xla_backend.cpp")
-            .cpp(true)
+            .file("kernels/tt_xla_backend.c")
             .opt_level(3)
-            .flag("-std=c++17")
             .flag("-march=native")
             .flag("-mtune=native")
             .flag("-funroll-loops")
@@ -38,6 +36,6 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
-    println!("cargo:rerun-if-changed=kernels/tt_xla_backend.cpp");
+    println!("cargo:rerun-if-changed=kernels/tt_xla_backend.c");
     println!("cargo:rerun-if-changed=kernels/matmul_tt.cpp");
 }
