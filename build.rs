@@ -18,12 +18,7 @@ fn main() {
         gpu_build
             .file("kernels/gpu_kernel.c")
             .opt_level(3)
-            .include("/opt/tenstorrent/include")
             .compile("gpu_kernel");
-        
-        println!("cargo:rustc-link-search=/opt/tenstorrent/lib");
-        println!("cargo:rustc-link-lib=tt_metal");
-        println!("cargo:rustc-link-lib=tt_eager");
     }
 
     // Add Homebrew library paths for macOS
