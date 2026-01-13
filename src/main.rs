@@ -48,7 +48,11 @@ impl Default for WorkloadSpec {
     fn default() -> Self {
         Self {
             parameters: Parameters {
-                shapes: Shapes { m: 1024, n: 1024, k: 1024 },
+                shapes: Shapes {
+                    m: 1024,
+                    n: 1024,
+                    k: 1024,
+                },
             },
         }
     }
@@ -64,18 +68,17 @@ where
             kernel();
             start.elapsed().as_secs_f64()
         })
-        .sum::<f64>() / runs as f64
+        .sum::<f64>()
+        / runs as f64
 }
 
 fn init_matrices(m: usize, n: usize, k: usize) -> (Vec<f32>, Vec<f32>) {
-    let a = (0..m * k)
-        .map(|i| ((i * 7) % 100) as f32 / 100.0)
-        .collect();
-    
+    let a = (0..m * k).map(|i| ((i * 7) % 100) as f32 / 100.0).collect();
+
     let b = (0..k * n)
         .map(|i| ((i * 11) % 100) as f32 / 100.0)
         .collect();
-    
+
     (a, b)
 }
 
@@ -91,13 +94,13 @@ struct BenchmarkResults {
 
 impl BenchmarkResults {
     fn new(
-        a: &[f32], 
-        b: &[f32], 
-        m: usize, 
-        n: usize, 
-        k: usize, 
-        warmup_runs: usize, 
-        bench_runs: usize
+        a: &[f32],
+        b: &[f32],
+        m: usize,
+        n: usize,
+        k: usize,
+        warmup_runs: usize,
+        bench_runs: usize,
     ) -> Self {
         // Warmup
         let mut c_warmup = vec![0.0f32; m * n];
@@ -105,39 +108,57 @@ impl BenchmarkResults {
             optimized::matmul(a, b, &mut c_warmup, m, n, k);
         }
 
-        let opt_time = Self::benchmark_impl(|| {
-            let mut c = vec![0.0f32; m * n];
-            optimized::matmul(a, b, &mut c, m, n, k);
-        }, bench_runs);
+        let opt_time = Self::benchmark_impl(
+            || {
+                let mut c = vec![0.0f32; m * n];
+                optimized::matmul(a, b, &mut c, m, n, k);
+            },
+            bench_runs,
+        );
 
-        let naive_time = Self::benchmark_impl(|| {
-            let mut c = vec![0.0f32; m * n];
-            naive::matmul(a, b, &mut c, m, n, k);
-        }, 1);
+        let naive_time = Self::benchmark_impl(
+            || {
+                let mut c = vec![0.0f32; m * n];
+                naive::matmul(a, b, &mut c, m, n, k);
+            },
+            1,
+        );
 
         let blas_time = if cfg!(feature = "blis") {
-            Self::benchmark_impl(|| {
-                let mut c = vec![0.0f32; m * n];
-                blis::matmul(a, b, &mut c, m, n, k);
-            }, bench_runs)
+            Self::benchmark_impl(
+                || {
+                    let mut c = vec![0.0f32; m * n];
+                    blis::matmul(a, b, &mut c, m, n, k);
+                },
+                bench_runs,
+            )
         } else {
             naive_time
         };
 
-        let tiled_time = Self::benchmark_impl(|| {
-            let mut c = vec![0.0f32; m * n];
-            tiled::matmul(a, b, &mut c, m, n, k);
-        }, bench_runs);
+        let tiled_time = Self::benchmark_impl(
+            || {
+                let mut c = vec![0.0f32; m * n];
+                tiled::matmul(a, b, &mut c, m, n, k);
+            },
+            bench_runs,
+        );
 
-        let vectorized_time = Self::benchmark_impl(|| {
-            let mut c = vec![0.0f32; m * n];
-            vectorized::matmul(a, b, &mut c, m, n, k);
-        }, bench_runs);
+        let vectorized_time = Self::benchmark_impl(
+            || {
+                let mut c = vec![0.0f32; m * n];
+                vectorized::matmul(a, b, &mut c, m, n, k);
+            },
+            bench_runs,
+        );
 
-        let parallel_time = Self::benchmark_impl(|| {
-            let mut c = vec![0.0f32; m * n];
-            parallel::matmul(a, b, &mut c, m, n, k);
-        }, bench_runs);
+        let parallel_time = Self::benchmark_impl(
+            || {
+                let mut c = vec![0.0f32; m * n];
+                parallel::matmul(a, b, &mut c, m, n, k);
+            },
+            bench_runs,
+        );
 
         Self {
             opt_time,
@@ -157,13 +178,19 @@ impl BenchmarkResults {
     }
 }
 
-fn compute_correctness(a: &[f32], b: &[f32], m: usize, n: usize, k: usize) -> (Vec<f32>, Vec<f32>, f32) {
+fn compute_correctness(
+    a: &[f32],
+    b: &[f32],
+    m: usize,
+    n: usize,
+    k: usize,
+) -> (Vec<f32>, Vec<f32>, f32) {
     let mut c_opt = vec![0.0f32; m * n];
     let mut c_naive = vec![0.0f32; m * n];
-    
+
     optimized::matmul(a, b, &mut c_opt, m, n, k);
     naive::matmul(a, b, &mut c_naive, m, n, k);
-    
+
     let max_error = c_opt
         .iter()
         .zip(&c_naive)
@@ -174,7 +201,9 @@ fn compute_correctness(a: &[f32], b: &[f32], m: usize, n: usize, k: usize) -> (V
 }
 
 impl From<(BenchmarkResults, &[f32], f32, usize, usize, usize)> for Metrics {
-    fn from((results, c_opt, max_error, m, n, k): (BenchmarkResults, &[f32], f32, usize, usize, usize)) -> Self {
+    fn from(
+        (results, c_opt, max_error, m, n, k): (BenchmarkResults, &[f32], f32, usize, usize, usize),
+    ) -> Self {
         let total_ops = 2u64 * m as u64 * n as u64 * k as u64;
         let memory_mb = (m * k + k * n + m * n) as f64 * 4.0 / (1024.0 * 1024.0 * 1024.0);
         let gflops = total_ops as f64 / 1e9 / results.opt_time;
@@ -210,34 +239,38 @@ fn load_workload(path: Option<String>) -> Result<WorkloadSpec> {
         Some(path) => {
             let data = std::fs::read_to_string(path)?;
             Ok(serde_json::from_str(&data)?)
-        }
+        },
         None => Ok(WorkloadSpec::default()),
     }
 }
 
 fn output_results(metrics: &Metrics, output_path: Option<String>) -> Result<()> {
     let json = serde_json::to_string_pretty(metrics)?;
-    
+
     match output_path {
         Some(path) => std::fs::write(path, json).map_err(Into::into),
         None => {
             print!("{}", json);
             Ok(())
-        }
+        },
     }
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let spec = load_workload(args.workload)?;
-    let (m, n, k) = (spec.parameters.shapes.m, spec.parameters.shapes.n, spec.parameters.shapes.k);
-    
+    let (m, n, k) = (
+        spec.parameters.shapes.m,
+        spec.parameters.shapes.n,
+        spec.parameters.shapes.k,
+    );
+
     let (a, b) = init_matrices(m, n, k);
     let results = BenchmarkResults::new(&a, &b, m, n, k, args.warmup_runs, args.bench_runs);
     let (c_opt, _c_naive, max_error) = compute_correctness(&a, &b, m, n, k);
-    
+
     let metrics = Metrics::from((results, c_opt.as_slice(), max_error, m, n, k));
     output_results(&metrics, args.output)?;
-    
+
     Ok(())
 }

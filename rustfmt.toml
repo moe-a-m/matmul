@@ -1,0 +1,30 @@
+# ===============================
+# Core Formatting (STABLE)
+# ===============================
+
+edition = "2024"
+max_width = 100
+tab_spaces = 4
+hard_tabs = false
+newline_style = "Unix"
+use_small_heuristics = "Default"
+
+# ===============================
+# Imports (stable subset)
+# ===============================
+
+reorder_imports = true
+reorder_modules = true
+
+# ===============================
+# Functions & Items
+# ===============================
+
+fn_params_layout = "Tall"
+match_block_trailing_comma = true
+
+# ===============================
+# Misc (stable)
+# ===============================
+
+remove_nested_parens = true
