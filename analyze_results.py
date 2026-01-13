@@ -45,6 +45,15 @@ def parse_result_file(filepath):
     if gflops_match:
         metrics['gflops'] = float(gflops_match.group(1))
     
+    # Look for GPU metrics
+    gpu_time_match = re.search(r'GPU\s+time:\s*(\d+\.?\d*)\s*ms', content)
+    if gpu_time_match:
+        metrics['gpu_time_ms'] = float(gpu_time_match.group(1))
+    
+    gpu_gflops_match = re.search(r'GPU\s+(\d+\.?\d*)\s*GFLOPS', content)
+    if gpu_gflops_match:
+        metrics['gpu_gflops'] = float(gpu_gflops_match.group(1))
+    
     return {
         'file': filepath.name,
         'metadata': metadata,
@@ -74,9 +83,9 @@ def analyze_results():
         print("No benchmark results found!")
         return
     
-    # Sort results by performance
-    results_with_time = [r for r in results if 'time_ms' in r['metrics']]
-    results_with_time.sort(key=lambda x: x['metrics']['time_ms'])
+    # Sort results by performance (prefer GPU time if available, otherwise CPU time)
+    results_with_time = [r for r in results if 'time_ms' in r['metrics'] or 'gpu_time_ms' in r['metrics']]
+    results_with_time.sort(key=lambda x: x['metrics'].get('gpu_time_ms', x['metrics'].get('time_ms', float('inf'))))
     
     # Generate summary
     summary = {
@@ -91,6 +100,22 @@ def analyze_results():
     with open(results_dir / 'performance_summary.json', 'w') as f:
         json.dump(summary, f, indent=2, default=str)
     
+    # Save detailed reproducibility data
+    repro_data = {
+        'analysis_timestamp': str(Path().resolve()),
+        'working_directory': str(Path().resolve()),
+        'total_files_analyzed': len(results),
+        'configurations': [{
+            'file': r['file'],
+            'features': r['metadata'].get('Features', ''),
+            'rustflags': r['metadata'].get('RUSTFLAGS', ''),
+            'metrics': r['metrics']
+        } for r in results]
+    }
+    
+    with open(results_dir / 'reproducibility_data.json', 'w') as f:
+        json.dump(repro_data, f, indent=2, default=str)
+    
     # Print summary
     print(f"\n=== PERFORMANCE ANALYSIS SUMMARY ===")
     print(f"Total configurations tested: {summary['total_configurations']}")
@@ -100,8 +125,8 @@ def analyze_results():
         best = summary['best_performance']
         print(f"\nBest Performance:")
         print(f"  File: {best['file']}")
-        print(f"  Time: {best['metrics'].get('time_ms', 'N/A')} ms")
-        print(f"  GFLOPS: {best['metrics'].get('gflops', 'N/A')}")
+        print(f"  Time: {best['metrics'].get('gpu_time_ms') or best['metrics'].get('time_ms', 'N/A')} ms")
+        print(f"  GFLOPS: {best['metrics'].get('gpu_gflops') or best['metrics'].get('gflops', 'N/A')}")
         print(f"  Features: {best['metadata'].get('Features', 'N/A')}")
         print(f"  RUSTFLAGS: {best['metadata'].get('RUSTFLAGS', 'N/A')}")
     
@@ -109,8 +134,8 @@ def analyze_results():
         worst = summary['worst_performance']
         print(f"\nWorst Performance:")
         print(f"  File: {worst['file']}")
-        print(f"  Time: {worst['metrics'].get('time_ms', 'N/A')} ms")
-        print(f"  GFLOPS: {worst['metrics'].get('gflops', 'N/A')}")
+        print(f"  Time: {worst['metrics'].get('gpu_time_ms') or worst['metrics'].get('time_ms', 'N/A')} ms")
+        print(f"  GFLOPS: {worst['metrics'].get('gpu_gflops') or worst['metrics'].get('gflops', 'N/A')}")
         print(f"  Features: {worst['metadata'].get('Features', 'N/A')}")
         print(f"  RUSTFLAGS: {worst['metadata'].get('RUSTFLAGS', 'N/A')}")
     
