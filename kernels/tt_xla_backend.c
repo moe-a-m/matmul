@@ -100,10 +100,11 @@ void tt_matmul_c(
     #pragma omp parallel
     {
         float* PB = aligned_alloc(CACHELINE, NC * KC * sizeof(float));
-        if (!PB) return;
-
+        
         #pragma omp for schedule(static)
         for (size_t jc = 0; jc < N; jc += NC) {
+            if (!PB) continue;  // Skip this iteration if allocation failed
+            
             size_t nc = (jc + NC <= N) ? NC : N - jc;
 
             for (size_t pc = 0; pc < K; pc += KC) {
@@ -146,6 +147,6 @@ void tt_matmul_c(
             }
         }
 
-        free(PB);
+        if (PB) free(PB);
     }
 }
