@@ -12,9 +12,8 @@ RUSTFLAGS_CONFIGS=(
     ""
     "-C target-cpu=native"
     "-C target-cpu=native -C opt-level=3"
-    "-C target-cpu=native -C opt-level=3 -C lto=fat"
-    "-C target-cpu=native -C opt-level=3 -C lto=fat -C codegen-units=1"
-    "-C target-cpu=native -C opt-level=3 -C lto=fat -C codegen-units=1 -C panic=abort"
+    "-C target-cpu=native -C opt-level=3 -C codegen-units=1"
+    "-C target-cpu=native -C opt-level=3 -C codegen-units=1 -C panic=abort"
 )
 
 echo "Starting comprehensive matmul benchmark..."

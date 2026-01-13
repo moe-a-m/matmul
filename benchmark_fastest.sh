@@ -8,13 +8,13 @@ mkdir -p "$RESULTS_DIR"
 
 # Optimal configurations based on typical performance patterns
 FAST_CONFIGS=(
-    "blis,parallel,vectorized,gpu:-C target-cpu=native -C opt-level=3 -C lto=fat -C codegen-units=1"
-    "blis,gpu:-C target-cpu=native -C opt-level=3 -C lto=fat"
-    "gpu,parallel:-C target-cpu=native -C opt-level=3 -C lto=fat"
+    "blis,parallel,vectorized,gpu:-C target-cpu=native -C opt-level=3"
+    "blis,gpu:-C target-cpu=native -C opt-level=3"
+    "gpu,parallel:-C target-cpu=native -C opt-level=3"
     "gpu,vectorized:-C target-cpu=native -C opt-level=3"
     "gpu:-C target-cpu=native -C opt-level=3"
-    "blis,parallel,vectorized:-C target-cpu=native -C opt-level=3 -C lto=fat -C codegen-units=1"
-    "blis,parallel:-C target-cpu=native -C opt-level=3 -C lto=fat"
+    "blis,parallel,vectorized:-C target-cpu=native -C opt-level=3 -C codegen-units=1"
+    "blis,parallel:-C target-cpu=native -C opt-level=3"
     "blis,vectorized:-C target-cpu=native -C opt-level=3"
 )
 
@@ -41,7 +41,7 @@ for config in "${FAST_CONFIGS[@]}"; do
         if [ -n "$result" ] && [ "$result" != "null" ]; then
             echo "  Time: ${result}ms"
             
-            if (( $(echo "$result < $best_time" | bc -l) )); then
+            if (( $(awk "BEGIN {print ($result < $best_time)}") )); then
                 best_time=$result
                 best_config=$config
                 best_features=$features
