@@ -7,7 +7,7 @@ mod matmul;
 mod validate;
 
 use bench::{Metrics, PerformanceAnalysis, WorkloadInfo};
-use matmul::{blis, naive, optimized, parallel, tiled, vectorized};
+use matmul::{blis, gpu, naive, optimized, parallel, tiled, vectorized};
 use validate::compute_hash;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -90,6 +90,7 @@ struct BenchmarkResults {
     tiled_time: f64,
     vectorized_time: f64,
     parallel_time: f64,
+    gpu_time: f64,
 }
 
 impl BenchmarkResults {
@@ -160,6 +161,14 @@ impl BenchmarkResults {
             bench_runs,
         );
 
+        let gpu_time = Self::benchmark_impl(
+            || {
+                let mut c = vec![0.0f32; m * n];
+                gpu::matmul(a, b, &mut c, m, n, k);
+            },
+            bench_runs,
+        );
+
         Self {
             opt_time,
             naive_time,
@@ -167,6 +176,7 @@ impl BenchmarkResults {
             tiled_time,
             vectorized_time,
             parallel_time,
+            gpu_time,
         }
     }
 
@@ -227,6 +237,7 @@ impl From<(BenchmarkResults, &[f32], f32, usize, usize, usize)> for Metrics {
                 tiled_speedup: results.naive_time / results.tiled_time,
                 vectorized_speedup: results.naive_time / results.vectorized_time,
                 parallel_speedup: results.naive_time / results.parallel_time,
+                gpu_speedup: results.naive_time / results.gpu_time,
                 memory_bandwidth_gbps: bandwidth_gbps,
                 compute_efficiency: gflops / 100.0,
             },

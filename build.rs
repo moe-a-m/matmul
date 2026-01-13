@@ -12,6 +12,20 @@ fn main() {
 
     build.compile("matmul_kernel");
 
+    // GPU kernel compilation
+    if std::env::var("CARGO_FEATURE_GPU").is_ok() {
+        let mut gpu_build = cc::Build::new();
+        gpu_build
+            .file("kernels/gpu_kernel.c")
+            .opt_level(3)
+            .include("/opt/tenstorrent/include")
+            .compile("gpu_kernel");
+        
+        println!("cargo:rustc-link-search=/opt/tenstorrent/lib");
+        println!("cargo:rustc-link-lib=tt_metal");
+        println!("cargo:rustc-link-lib=tt_eager");
+    }
+
     // Add Homebrew library paths for macOS
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-search=/opt/homebrew/lib");
@@ -24,4 +38,5 @@ fn main() {
     }
 
     print!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
+    print!("cargo:rerun-if-changed=kernels/gpu_kernel.c");
 }

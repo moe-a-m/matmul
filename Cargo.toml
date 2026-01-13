@@ -8,6 +8,7 @@ default = []
 blis = []
 parallel = []
 vectorized = []
+gpu = []
 
 [dependencies]
 clap = { version = "4.5.54", features = ["derive"] }
