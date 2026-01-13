@@ -25,9 +25,11 @@ fn main() {
             .flag("-fopenmp")
             .flag("-funroll-loops")
             .flag("-ffast-math")
+            .flag("-DOMP_NUM_THREADS=4")
             .compile("tt_xla_backend");
         
         println!("cargo:rustc-link-lib=gomp");
+        println!("cargo:rustc-link-lib=m");
     }
 
     // Add Homebrew library paths for macOS
@@ -43,5 +45,4 @@ fn main() {
 
     println!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
     println!("cargo:rerun-if-changed=kernels/tt_xla_backend.c");
-    println!("cargo:rerun-if-changed=kernels/matmul_tt.cpp");
 }
