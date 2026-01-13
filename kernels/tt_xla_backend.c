@@ -7,10 +7,9 @@
 
 #define CACHELINE 64
 
-// BLIS-style blocking parameters (safe defaults)
+// Tuned blocking parameters
 #define MR 6
 #define NR 16
-
 #define MC 192
 #define NC 256
 #define KC 256
@@ -34,11 +33,8 @@ static inline void pack_b(
             float* dst = PB + jr * kc + k * NR;
             const float* src = B + (pc + k) * N + (jc + jr);
 
-            // copy valid
             for (size_t j = 0; j < nr; j++)
                 dst[j] = src[j];
-
-            // pad
             for (size_t j = nr; j < NR; j++)
                 dst[j] = 0.0f;
         }
@@ -84,8 +80,7 @@ static inline void microkernel_6x16(
 }
 
 // ------------------------------------------------------------
-// Reference BLIS-style GEMM
-// C := A * B
+// Full GEMM with BLIS-style blocking
 // ------------------------------------------------------------
 void tt_matmul_c(
     const float* A,
@@ -99,11 +94,12 @@ void tt_matmul_c(
 
     #pragma omp parallel
     {
+        // Thread-local packed B buffer
         float* PB = aligned_alloc(CACHELINE, NC * KC * sizeof(float));
-        
+
         #pragma omp for schedule(static)
         for (size_t jc = 0; jc < N; jc += NC) {
-            if (!PB) continue;  // Skip this iteration if allocation failed
+            if (!PB) continue;  // Skip if allocation failed
             
             size_t nc = (jc + NC <= N) ? NC : N - jc;
 
@@ -116,9 +112,12 @@ void tt_matmul_c(
                     size_t mc = (ic + MC <= M) ? MC : M - ic;
 
                     for (size_t jr = 0; jr < nc; jr += NR) {
-                        for (size_t ir = 0; ir < mc; ir += MR) {
+                        size_t nr = (jr + NR <= nc) ? NR : nc - jr;
 
-                            if (ir + MR <= mc && jr + NR <= nc) {
+                        for (size_t ir = 0; ir < mc; ir += MR) {
+                            size_t mr = (ir + MR <= mc) ? MR : mc - ir;
+
+                            if (mr == MR && nr == NR) {
                                 microkernel_6x16(
                                     &A[(ic + ir) * K + pc],
                                     PB + jr * kc,
@@ -128,9 +127,9 @@ void tt_matmul_c(
                                     N
                                 );
                             } else {
-                                // ---- scalar remainder (correctness) ----
-                                for (size_t i = 0; i < MR && ir + i < mc; i++) {
-                                    for (size_t j = 0; j < NR && jr + j < nc; j++) {
+                                // Scalar remainder kernel
+                                for (size_t i = 0; i < mr; i++) {
+                                    for (size_t j = 0; j < nr; j++) {
                                         float sum = C[(ic + ir + i) * N + (jc + jr + j)];
                                         for (size_t k = 0; k < kc; k++) {
                                             sum +=
