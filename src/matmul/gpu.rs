@@ -1,8 +1,6 @@
 #[cfg(feature = "gpu")]
 mod gpu_impl {
-    use std::ffi::c_void;
-
-    extern "C" {
+    unsafe extern "C" {
         fn matmul_tiled(
             a: *const f32,
             b: *const f32,
@@ -27,18 +25,6 @@ mod gpu_impl {
     }
 }
 
-fn fallback_matmul(a: &[f32], b: &[f32], c: &mut [f32], m: usize, n: usize, k: usize) {
-    for i in 0..m {
-        for j in 0..n {
-            let mut sum = 0.0;
-            for l in 0..k {
-                sum += a[i * k + l] * b[l * n + j];
-            }
-            c[i * n + j] = sum;
-        }
-    }
-}
-
 pub fn matmul(a: &[f32], b: &[f32], c: &mut [f32], m: usize, n: usize, k: usize) {
     #[cfg(feature = "gpu")]
     {
@@ -46,6 +32,14 @@ pub fn matmul(a: &[f32], b: &[f32], c: &mut [f32], m: usize, n: usize, k: usize)
     }
     #[cfg(not(feature = "gpu"))]
     {
-        fallback_matmul(a, b, c, m, n, k);
+        for i in 0..m {
+            for j in 0..n {
+                let mut sum = 0.0;
+                for l in 0..k {
+                    sum += a[i * k + l] * b[l * n + j];
+                }
+                c[i * n + j] = sum;
+            }
+        }
     }
 }
