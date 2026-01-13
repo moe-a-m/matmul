@@ -18,6 +18,8 @@ fn main() {
         gpu_build
             .file("kernels/gpu_kernel.c")
             .opt_level(3)
+            .flag("-mavx2")
+            .flag("-mfma")
             .compile("gpu_kernel");
     }
 
