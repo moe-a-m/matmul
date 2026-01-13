@@ -16,9 +16,18 @@ fn main() {
     if std::env::var("CARGO_FEATURE_GPU").is_ok() {
         let mut gpu_build = cc::Build::new();
         gpu_build
-            .file("kernels/tt_xla_backend.c")
+            .file("kernels/tt_xla_backend.cpp")
+            .cpp(true)
             .opt_level(3)
+            .flag("-std=c++17")
+            .include("/opt/tenstorrent/include")
+            .include("/usr/include/tt_metal")
             .compile("tt_xla_backend");
+        
+        println!("cargo:rustc-link-search=/opt/tenstorrent/lib");
+        println!("cargo:rustc-link-lib=tt_metal");
+        println!("cargo:rustc-link-lib=tt_eager");
+        println!("cargo:rustc-link-lib=stdc++");
     }
 
     // Add Homebrew library paths for macOS
@@ -33,5 +42,6 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
-    println!("cargo:rerun-if-changed=kernels/tt_xla_backend.c");
+    println!("cargo:rerun-if-changed=kernels/tt_xla_backend.cpp");
+    println!("cargo:rerun-if-changed=kernels/matmul_tt.cpp");
 }
