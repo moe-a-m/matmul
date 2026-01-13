@@ -20,6 +20,8 @@ fn main() {
             .opt_level(3)
             .flag("-march=native")
             .flag("-mtune=native")
+            .flag("-mavx2")
+            .flag("-mfma")
             .flag("-funroll-loops")
             .compile("tt_xla_backend");
     }
