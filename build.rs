@@ -22,8 +22,12 @@ fn main() {
             .flag("-mtune=native")
             .flag("-mavx2")
             .flag("-mfma")
+            .flag("-fopenmp")
             .flag("-funroll-loops")
+            .flag("-ffast-math")
             .compile("tt_xla_backend");
+        
+        println!("cargo:rustc-link-lib=gomp");
     }
 
     // Add Homebrew library paths for macOS
