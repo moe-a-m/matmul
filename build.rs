@@ -16,11 +16,9 @@ fn main() {
     if std::env::var("CARGO_FEATURE_GPU").is_ok() {
         let mut gpu_build = cc::Build::new();
         gpu_build
-            .file("kernels/gpu_kernel.c")
+            .file("kernels/tt_xla_backend.c")
             .opt_level(3)
-            .flag("-mavx2")
-            .flag("-mfma")
-            .compile("gpu_kernel");
+            .compile("tt_xla_backend");
     }
 
     // Add Homebrew library paths for macOS
@@ -35,5 +33,5 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
-    println!("cargo:rerun-if-changed=kernels/gpu_kernel.c");
+    println!("cargo:rerun-if-changed=kernels/tt_xla_backend.c");
 }
