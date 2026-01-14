@@ -12,6 +12,26 @@ fn main() {
 
     build.compile("matmul_kernel");
 
+    // GPU kernel compilation
+    if std::env::var("CARGO_FEATURE_GPU").is_ok() {
+        let mut gpu_build = cc::Build::new();
+        gpu_build
+            .file("kernels/tt_xla_backend.c")
+            .opt_level(3)
+            .flag("-march=native")
+            .flag("-mtune=native")
+            .flag("-mavx2")
+            .flag("-mfma")
+            .flag("-fopenmp")
+            .flag("-funroll-loops")
+            .flag("-ffast-math")
+            .flag("-DOMP_NUM_THREADS=4")
+            .compile("tt_xla_backend");
+        
+        println!("cargo:rustc-link-lib=gomp");
+        println!("cargo:rustc-link-lib=m");
+    }
+
     // Add Homebrew library paths for macOS
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-search=/opt/homebrew/lib");
@@ -23,5 +43,6 @@ fn main() {
         println!("cargo:rustc-link-lib=blis");
     }
 
-    print!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
+    println!("cargo:rerun-if-changed=kernels/matmul_kernel.c");
+    println!("cargo:rerun-if-changed=kernels/tt_xla_backend.c");
 }

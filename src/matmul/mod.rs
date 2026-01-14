@@ -1,4 +1,5 @@
 pub mod blis;
+pub mod gpu;
 pub mod naive;
 pub mod optimized;
 pub mod parallel;

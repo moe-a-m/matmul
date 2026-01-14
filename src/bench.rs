@@ -26,6 +26,7 @@ pub struct PerformanceAnalysis {
     pub tiled_speedup: f64,
     pub vectorized_speedup: f64,
     pub parallel_speedup: f64,
+    pub gpu_speedup: f64,
     pub memory_bandwidth_gbps: f64,
     pub compute_efficiency: f64,
 }
