@@ -85,6 +85,23 @@ cargo run --release --features blis,parallel,vectorized,gpu
 cargo build --release --features blis,parallel,vectorized,gpu
 ```
 
+### GPU Usage
+
+```bash
+# Build with GPU support
+cargo build --release --features gpu
+
+# Run GPU-accelerated benchmark
+cargo run --release --features gpu
+
+# Combine GPU with other optimizations
+cargo run --release --features gpu,parallel,vectorized
+
+# Maximum performance with all features
+RUSTFLAGS="-C target-cpu=native -C opt-level=3" \
+  cargo run --release --features blis,parallel,vectorized,gpu
+```
+
 ## Benchmarking
 
 ### Comprehensive Benchmark
