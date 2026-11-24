@@ -1,0 +1,5 @@
+target/
+results/
+.git/
+__pycache__/
+*.o

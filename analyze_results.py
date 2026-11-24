@@ -1,145 +1,53 @@
 #!/usr/bin/env python3
-"""
-Performance analysis script for matmul benchmark results
-Analyzes all result files and generates performance summary
-"""
+"""Summarise benchmark reports (schema v2) written by the matmul harness.
 
+    python3 analyze_results.py [DIR_OR_FILE ...]     # default: results/
+"""
 import json
-import os
-import re
+import sys
 from pathlib import Path
 
-def parse_result_file(filepath):
-    """Parse benchmark result file and extract performance metrics"""
-    with open(filepath, 'r') as f:
-        content = f.read()
-    
-    # Extract metadata
-    metadata = {}
-    if "=== BENCHMARK METADATA ===" in content:
-        metadata_section = content.split("=== BENCHMARK METADATA ===")[1]
-        for line in metadata_section.strip().split('\n'):
-            if ':' in line:
-                key, value = line.split(':', 1)
-                metadata[key.strip()] = value.strip()
-    
-    # Extract performance metrics (adjust regex based on your output format)
-    metrics = {}
-    
-    # Look for timing information
-    time_patterns = [
-        r'Time:\s*(\d+\.?\d*)\s*ms',
-        r'Elapsed:\s*(\d+\.?\d*)\s*ms',
-        r'Duration:\s*(\d+\.?\d*)\s*ms',
-        r'(\d+\.?\d*)\s*ms'
-    ]
-    
-    for pattern in time_patterns:
-        matches = re.findall(pattern, content)
-        if matches:
-            metrics['time_ms'] = float(matches[0])
-            break
-    
-    # Look for GFLOPS
-    gflops_match = re.search(r'(\d+\.?\d*)\s*GFLOPS', content)
-    if gflops_match:
-        metrics['gflops'] = float(gflops_match.group(1))
-    
-    # Look for GPU metrics
-    gpu_time_match = re.search(r'GPU\s+time:\s*(\d+\.?\d*)\s*ms', content)
-    if gpu_time_match:
-        metrics['gpu_time_ms'] = float(gpu_time_match.group(1))
-    
-    gpu_gflops_match = re.search(r'GPU\s+(\d+\.?\d*)\s*GFLOPS', content)
-    if gpu_gflops_match:
-        metrics['gpu_gflops'] = float(gpu_gflops_match.group(1))
-    
-    return {
-        'file': filepath.name,
-        'metadata': metadata,
-        'metrics': metrics,
-        'raw_output': content
-    }
 
-def analyze_results():
-    """Analyze all benchmark results and generate summary"""
-    results_dir = Path('results')
-    
-    if not results_dir.exists():
-        print("Results directory not found!")
-        return
-    
-    results = []
-    
-    # Parse all benchmark result files
-    for result_file in results_dir.glob('bench_*.json'):
-        try:
-            result = parse_result_file(result_file)
-            results.append(result)
-        except Exception as e:
-            print(f"Error parsing {result_file}: {e}")
-    
-    if not results:
-        print("No benchmark results found!")
-        return
-    
-    # Sort results by performance (prefer GPU time if available, otherwise CPU time)
-    results_with_time = [r for r in results if 'time_ms' in r['metrics'] or 'gpu_time_ms' in r['metrics']]
-    results_with_time.sort(key=lambda x: x['metrics'].get('gpu_time_ms', x['metrics'].get('time_ms', float('inf'))))
-    
-    # Generate summary
-    summary = {
-        'total_configurations': len(results),
-        'successful_runs': len(results_with_time),
-        'best_performance': results_with_time[0] if results_with_time else None,
-        'worst_performance': results_with_time[-1] if results_with_time else None,
-        'all_results': results
-    }
-    
-    # Save summary
-    with open(results_dir / 'performance_summary.json', 'w') as f:
-        json.dump(summary, f, indent=2, default=str)
-    
-    # Save detailed reproducibility data
-    repro_data = {
-        'analysis_timestamp': str(Path().resolve()),
-        'working_directory': str(Path().resolve()),
-        'total_files_analyzed': len(results),
-        'configurations': [{
-            'file': r['file'],
-            'features': r['metadata'].get('Features', ''),
-            'rustflags': r['metadata'].get('RUSTFLAGS', ''),
-            'metrics': r['metrics']
-        } for r in results]
-    }
-    
-    with open(results_dir / 'reproducibility_data.json', 'w') as f:
-        json.dump(repro_data, f, indent=2, default=str)
-    
-    # Print summary
-    print(f"\n=== PERFORMANCE ANALYSIS SUMMARY ===")
-    print(f"Total configurations tested: {summary['total_configurations']}")
-    print(f"Successful runs: {summary['successful_runs']}")
-    
-    if summary['best_performance']:
-        best = summary['best_performance']
-        print(f"\nBest Performance:")
-        print(f"  File: {best['file']}")
-        print(f"  Time: {best['metrics'].get('gpu_time_ms') or best['metrics'].get('time_ms', 'N/A')} ms")
-        print(f"  GFLOPS: {best['metrics'].get('gpu_gflops') or best['metrics'].get('gflops', 'N/A')}")
-        print(f"  Features: {best['metadata'].get('Features', 'N/A')}")
-        print(f"  RUSTFLAGS: {best['metadata'].get('RUSTFLAGS', 'N/A')}")
-    
-    if summary['worst_performance'] and len(results_with_time) > 1:
-        worst = summary['worst_performance']
-        print(f"\nWorst Performance:")
-        print(f"  File: {worst['file']}")
-        print(f"  Time: {worst['metrics'].get('gpu_time_ms') or worst['metrics'].get('time_ms', 'N/A')} ms")
-        print(f"  GFLOPS: {worst['metrics'].get('gpu_gflops') or worst['metrics'].get('gflops', 'N/A')}")
-        print(f"  Features: {worst['metadata'].get('Features', 'N/A')}")
-        print(f"  RUSTFLAGS: {worst['metadata'].get('RUSTFLAGS', 'N/A')}")
-    
-    print(f"\nDetailed results saved to: {results_dir / 'performance_summary.json'}")
+def load_reports(paths):
+    reports = []
+    for root in paths:
+        files = [root] if root.is_file() else sorted(root.rglob("*.json"))
+        for f in files:
+            try:
+                data = json.loads(f.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue  # not a report (e.g. old-format logs)
+            if isinstance(data, dict) and data.get("schema_version") == 2:
+                reports.append((f, data))
+    return reports
+
+
+def main():
+    paths = [Path(p) for p in sys.argv[1:]] or [Path("results")]
+    reports = load_reports(paths)
+    if not reports:
+        print("No schema-v2 reports found. Run ./benchmark_all.sh first.")
+        return 1
+
+    best = {}
+    for path, r in reports:
+        w, s, b = r["workload"], r["system"], r["build"]
+        threads = s.get("omp_num_threads") or s.get("rayon_threads")
+        print(f"\n{path}  |  {w['m']}x{w['n']}x{w['k']}  |  {s['cpu_model']}  |  "
+              f"features={','.join(b['features']) or 'none'}  threads={threads}  commit={b['git_commit']}")
+        print(f"  {'backend':<12} {'best ms':>10} {'GFLOPS':>9} {'median':>9} {'vs naive':>9}  correct")
+        for x in [r["reference"]] + r["backends"]:
+            print(f"  {x['name']:<12} {x['best_ms']:>10.2f} {x['gflops_best']:>9.2f} "
+                  f"{x['gflops_median']:>9.2f} {x['speedup_vs_naive']:>8.1f}x  {x['correct']}")
+            key = (x["name"], f"{w['m']}x{w['n']}x{w['k']}")
+            if x["correct"] and x["gflops_best"] > best.get(key, (0, None))[0]:
+                best[key] = (x["gflops_best"], f"{path.name} (threads={threads})")
+
+    print("\nBest correct result per backend and size:")
+    for (name, size), (gflops, where) in sorted(best.items(), key=lambda kv: -kv[1][0]):
+        print(f"  {name:<12} {size:<16} {gflops:>8.2f} GFLOPS   {where}")
+    return 0
+
 
 if __name__ == "__main__":
-    analyze_results()
+    sys.exit(main())

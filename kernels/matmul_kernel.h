@@ -8,6 +8,13 @@
 
 #if defined(__riscv_vector)
 #include <riscv_vector.h>
+/* RVV intrinsics were renamed with a __riscv_ prefix in the v0.11+ spec
+ * (GCC 13+, Clang 17+). RVV(x) picks the right spelling for the compiler. */
+#if defined(__riscv_v_intrinsic) && __riscv_v_intrinsic >= 11000
+#define RVV(x) __riscv_##x
+#else
+#define RVV(x) x
+#endif
 #endif
 
 /* ===========================

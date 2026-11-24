@@ -1,0 +1,105 @@
+{
+  "schema_version": 2,
+  "timestamp_unix": 1795492662,
+  "workload": {
+    "m": 1024,
+    "n": 1024,
+    "k": 1024,
+    "flop": 2147483648,
+    "precision": "fp32",
+    "input_bytes": 8388608
+  },
+  "system": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "logical_cpus": 4,
+    "os": "linux",
+    "arch": "x86_64",
+    "omp_num_threads": "2",
+    "blis_num_threads": "2",
+    "rayon_threads": 2
+  },
+  "build": {
+    "features": [],
+    "rustc": "rustc 1.96.0-nightly (20f19f461 2026-03-21)",
+    "rustflags": "-C target-cpu=native",
+    "target": "x86_64-unknown-linux-gnu",
+    "git_commit": "0ee78f2-dirty",
+    "profile": "release"
+  },
+  "settings": {
+    "warmup_runs": 3,
+    "bench_runs": 10,
+    "tolerance": 0.0001
+  },
+  "reference": {
+    "name": "naive",
+    "description": "Rust triple loop (reference)",
+    "runs": 1,
+    "best_ms": 6676.655801,
+    "median_ms": 6676.655801,
+    "gflops_best": 0.3216406105101838,
+    "gflops_median": 0.3216406105101838,
+    "speedup_vs_naive": 1.0,
+    "max_abs_error": 0.0,
+    "rel_error": 0.0,
+    "correct": true
+  },
+  "backends": [
+    {
+      "name": "tiled",
+      "description": "Rust, 64x64x64 cache blocking",
+      "runs": 10,
+      "best_ms": 1873.658833,
+      "median_ms": 1903.172955,
+      "gflops_best": 1.1461444368511673,
+      "gflops_median": 1.128370200069389,
+      "speedup_vs_naive": 3.5634319778001977,
+      "max_abs_error": 0.0,
+      "rel_error": 0.0,
+      "correct": true
+    },
+    {
+      "name": "vectorized",
+      "description": "Rust, cache blocking + 4-wide accumulators (relies on auto-vectorisation)",
+      "runs": 10,
+      "best_ms": 1221.380911,
+      "median_ms": 1254.9139300000002,
+      "gflops_best": 1.7582423539285197,
+      "gflops_median": 1.7112597100583622,
+      "speedup_vs_naive": 5.46648121062701,
+      "max_abs_error": 0.00061035156,
+      "rel_error": 0.000002256254,
+      "correct": true
+    },
+    {
+      "name": "parallel",
+      "description": "Rust, Rayon row-parallel triple loop",
+      "runs": 10,
+      "best_ms": 3029.885899,
+      "median_ms": 3118.459606,
+      "gflops_best": 0.70876716800087,
+      "gflops_median": 0.6886360316703105,
+      "speedup_vs_naive": 2.2035997471731856,
+      "max_abs_error": 0.0,
+      "rel_error": 0.0,
+      "correct": true
+    },
+    {
+      "name": "c_packed",
+      "description": "C, tiled with A/B packing (RVV intrinsics on RISC-V)",
+      "runs": 10,
+      "best_ms": 472.53465900000003,
+      "median_ms": 477.81850399999996,
+      "gflops_best": 4.54460557992636,
+      "gflops_median": 4.494350114159664,
+      "speedup_vs_naive": 14.12945203877627,
+      "max_abs_error": 0.00061035156,
+      "rel_error": 0.000002256254,
+      "correct": true
+    }
+  ],
+  "fastest_correct_backend": "c_packed",
+  "latency_ms": 472.53465900000003,
+  "throughput_gflops": 4.54460557992636,
+  "output_hash": "20789b57aa336253932681bf29c2a51ff7b93afdd04f8e854292d677e7939c93"
+}
