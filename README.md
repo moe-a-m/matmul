@@ -1,307 +1,155 @@
 # Matrix Multiplication Benchmark Suite
 
-High-performance matrix multiplication implementations in Rust with comprehensive benchmarking and optimization analysis.
+Single-precision matrix multiplication (SGEMM, `C = A × B`, row-major) on the CPU: a naive reference, Rust loop variants, a packed C kernel, a **BLIS-style AVX2/FMA microkernel in C with OpenMP**, and the BLIS library itself as an external yardstick. Every backend is timed and **checked against the naive reference** in the same run, and every result file records the CPU, build flags, thread settings and git commit.
 
 [![Rust](https://img.shields.io/badge/rust-2024-orange.svg)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-## Features
+## Results
 
-- **Multiple Implementations**: Naive, optimized, tiled, vectorized, parallel, BLAS, and GPU
-- **Comprehensive Benchmarking**: Automated performance testing with multiple configurations
-- **Correctness Validation**: Hash-based verification and error analysis
-- **Performance Metrics**: GFLOPS, latency, bandwidth, speedup analysis
-- **Reproducibility**: JSON-based workload specs and result tracking
+Measured 24 Nov 2026 on an **Intel Core i7-5500U** (Broadwell laptop, 2 cores / 4 threads, AVX2 + FMA), 1024 × 1024 × 1024 fp32, `RUSTFLAGS="-C target-cpu=native"`, GCC with `-O3 -march=native`, 3 warm-up + 10 timed runs, best run shown. Raw reports: [`results/2026-11-24_i7-5500U/`](results/2026-11-24_i7-5500U/).
 
-## Implementations
+| Backend | What it is | 1 thread (GFLOPS) | 2 threads (GFLOPS) | Correct |
+|---|---|---:|---:|:---:|
+| `naive` | Rust triple loop (reference) | 0.27–0.35 | 0.30–0.39 | reference |
+| `tiled` | Rust, 64³ cache blocking | 1.18 | 1.17 | ✓ |
+| `vectorized` | Rust, blocking + 4-wide accumulators | 1.80 | 1.80 | ✓ |
+| `parallel` | Rust, Rayon row-parallel triple loop | 0.42 | 0.71 | ✓ |
+| `c_packed` | C, tiled with A/B packing | 4.56 | 4.55 | ✓ |
+| **`avx2_blis`** | **C, BLIS-style packing + 6×16 AVX2/FMA microkernel, OpenMP** | **51.04** | **88.80** | ✓ |
+| `blis` | BLIS library `cblas_sgemm` (Debian `libblis-openmp`) | 77.69 | 127.30 | ✓ |
 
-| Implementation | Description | Feature Flag |
-|---------------|-------------|--------------|
-| **Naive** | Basic triple-loop implementation | (default) |
-| **Optimized** | Custom C kernel with compiler optimizations | (default) |
-| **Tiled** | Cache-friendly blocked algorithm | (default) |
-| **Vectorized** | SIMD-optimized computation | `vectorized` |
-| **Parallel** | Multi-threaded with Rayon | `parallel` |
-| **BLAS** | BLIS library integration | `blis` |
-| **GPU** | Custom XLA backend with OpenMP | `gpu` |
+**Summary:** `avx2_blis` reaches **88.8 GFLOPS on 2 cores, about 70% of BLIS** (127.3) on the same machine and over 200× the naive loop. Single-threaded it reaches about 66% of BLIS (51.0 vs 77.7). All outputs match the reference within a relative error of 1e-4 (observed ≈2e-6).
 
-## Quick Start
+**Measurement notes:**
+- Best results per backend are taken across the sweep in `results/2026-11-24_i7-5500U/` (`bench_<features>_t<threads>.json`).
+- This laptop throttles under sustained load (sensors read 85–97 °C). The last configuration of the sweep (`bench_avx2_blis_t2.json`) ran hot and shows `avx2_blis` at single-thread speed. A re-run after cooling (`rerun_cooled_avx2_blis_t2.json`) gives 87.2 / 121.3 GFLOPS. Both files are kept.
+- The reports were produced from the working tree before these changes were committed, so they record `git_commit: 0ee78f2-dirty`. Re-run `./benchmark_all.sh` after committing to get a clean commit id.
+- *Inference:* BLIS's 77.7 GFLOPS single-threaded means turbo was active. At 3.0 GHz the theoretical fp32 peak is 96 GFLOPS per core (2 FMA units × 8 lanes × 2 FLOP), so `avx2_blis` is at roughly 53% and BLIS at roughly 81% of single-core peak.
 
-### Prerequisites
+## Corrections and history
 
-- Rust (2021 edition or later)
-- C compiler (gcc/clang)
-- BLIS library (optional, for `blis` feature)
-- OpenMP (optional, for `gpu` feature)
+An earlier version of this README and of the project description contained figures that were **never measured**, and some backends were mislabelled. Fixed in this version:
 
-### Setup
+| Before | Now |
+|---|---|
+| README "Output Format" example showed `47.56` GFLOPS and `125.4×` with a placeholder hash. These were illustrative values, not results; the only result committed at the time (`results/metrics.json`, Jan 2026) was 3.18 GFLOPS | Real reports with hardware and build metadata (table above) |
+| `gpu` feature / `gpu.rs` / `tt_xla_backend.c` ("Custom XLA backend") | It has always been an **x86 AVX2 CPU kernel**; renamed to feature `avx2`, `avx2_blis.rs`, `kernels/avx2_blis_kernel.c`. An experimental Tenstorrent N300s backend was added and removed on 13 Jan 2026; nothing here runs on a GPU or accelerator |
+| `blis` backend was a blocked Rust loop and did not call BLIS | Now calls `cblas_sgemm` from the BLIS library |
+| Headline throughput always measured the `optimized` C kernel; the AVX2 kernel's output was never checked | Every backend is timed and validated; the report names the fastest correct one |
+| `optimized.rs` | Renamed `c_packed.rs` (describes what it does) |
+| RISC-V path used invalid inline asm (`read_cycle()`) and pre-1.0 RVV intrinsic names | Fixed (`rdcycle`/`rdinstret`; an `RVV()` macro picks the intrinsic spelling per compiler). It compiles for `rv64gcv` (checked with Clang 15) but **has not been run or measured on RISC-V hardware** |
+| `parallel` and `vectorized` Cargo features did nothing | Removed; those backends are always built |
 
-```bash
-# Update Cargo.toml with your details
-# Edit: authors, repository fields
-
-./setup.sh
-```
-
-Or manually:
+## Quick start
 
 ```bash
-# Install BLIS (macOS)
-brew install blis
+# Dependencies (BLIS is only needed for the `blis` feature)
+sudo apt install libblis-dev libblis-openmp-dev     # Debian/Ubuntu
+brew install blis libomp                             # macOS (see notes below)
 
-# Install BLIS (Ubuntu/Debian)
-sudo apt install libblis-dev libblis-openmp-dev
+# Correctness tests: every backend vs. the naive reference on odd shapes
+cargo test --release --features avx2,blis
 
-# Build project
-cargo build --release
+# Benchmark 1024^3 with every backend, on 2 threads
+RUSTFLAGS="-C target-cpu=native" OMP_NUM_THREADS=2 BLIS_NUM_THREADS=2 RAYON_NUM_THREADS=2 \
+  cargo run --release --features avx2,blis -- --output results/my_run.json
 ```
 
-### Basic Usage
+The harness prints a table to stderr and the JSON report to stdout (or to `--output`). Options: `--workload <file.json>`, `--warmup-runs`, `--bench-runs`, `--tolerance`.
+
+### Cargo features
+
+| Feature | Adds | Requirements |
+|---|---|---|
+| (none) | `naive`, `tiled`, `vectorized`, `parallel`, `c_packed` | Rust, a C compiler |
+| `avx2` | `avx2_blis` | x86-64 with AVX2/FMA, OpenMP (GCC: built in; macOS: Homebrew `libomp`, untested) |
+| `blis` | `blis` (external reference) | `libblis` with the CBLAS interface |
+
+Set `OMP_NUM_THREADS` (for `avx2_blis` and BLIS's OpenMP build), `BLIS_NUM_THREADS` and `RAYON_NUM_THREADS` explicitly; they are recorded in every report. Use the number of **physical** cores for the fairest comparison.
+
+## Benchmarking scripts
 
 ```bash
-# Run with default configuration (1024x1024x1024)
-cargo run --release
+./benchmark_all.sh                     # feature sets x {1 thread, all physical cores} -> results/<date>/
+WORKLOAD=tests/test_workload.json THREADS="1 2 4" OUT_DIR=results/custom ./benchmark_all.sh
+./benchmark_fastest.sh                 # all available features, 20 timed runs -> results/fastest_<time>.json
 
-# Run with custom workload
-cargo run --release -- --workload tests/test_workload.json
-
-# Save results to file
-cargo run --release -- --output results/benchmark.json
-
-# Configure benchmark runs
-cargo run --release -- --warmup-runs 5 --bench-runs 10
+python3 analyze_results.py results/2026-11-24_i7-5500U   # tables + best correct result per backend
+python3 analyze_fastest.py                                # latest fastest_*.json
+python3 analyze_fastest.py reproduce                      # rebuild with the same settings and compare
 ```
 
-### Feature Flags
+## Report format (schema v2)
+
+Each report contains:
+- `workload`: `m`, `n`, `k`, `flop` (= 2·m·n·k), precision, input bytes
+- `system`: CPU model, logical CPUs, OS, arch, `OMP_NUM_THREADS`, `BLIS_NUM_THREADS`, Rayon threads
+- `build`: features, rustc version, `RUSTFLAGS`, target, git commit (`-dirty` if uncommitted changes), profile
+- `settings`: warm-up runs, timed runs, tolerance
+- `reference` and `backends[]`: `best_ms`, `median_ms`, `gflops_best`, `gflops_median`, `speedup_vs_naive`, `max_abs_error`, `rel_error` (= max|c − ref| / max|ref|), `correct`
+- `fastest_correct_backend`, `latency_ms`, `throughput_gflops`, `output_hash` (SHA-256 of that backend's output)
+
+See any file in `results/2026-11-24_i7-5500U/` for a full example.
+
+## How `avx2_blis` works
+
+Following Goto & van de Geijn ("Anatomy of High-Performance Matrix Multiplication", 2008) and the BLIS framework:
+
+1. Split N into NC = 256 column panels, distributed across OpenMP threads.
+2. For each KC = 256 slice of K, pack the B panel into `[jr][k][NR]` order in a 64-byte-aligned, thread-local buffer.
+3. Walk MC = 192 rows of A and NR = 16 columns of the packed panel.
+4. A **6 × 16 microkernel** keeps 12 AVX2 accumulators (6 rows × 2 vectors of 8 floats) in registers and does a broadcast-FMA update per k.
+5. Tiles smaller than 6 × 16 at the matrix edges use a scalar loop. That is why sizes like 1023³ run about 30% slower than 1024³; vectorising the edge path is the next optimisation.
+
+## RISC-V
+
+`kernels/matmul_kernel.c` (`c_packed`) has an RVV path that `build.rs` enables with `-march=rv64gcv` for RISC-V targets:
 
 ```bash
-# Enable specific features
-cargo run --release --features blis
-cargo run --release --features parallel,vectorized
-cargo run --release --features blis,parallel,vectorized,gpu
-
-# Build with all features
-cargo build --release --features blis,parallel,vectorized,gpu
+cargo build --release --target riscv64gc-unknown-linux-gnu   # needs a RISC-V cross toolchain and sysroot
 ```
 
-### GPU Usage
+It compiles to vector code (`vsetvli`, `vle32.v`, `vfmacc.vf`), but it has **not been executed or benchmarked on RISC-V hardware**, so no RISC-V performance is claimed.
+
+## Docker
 
 ```bash
-# Build with GPU support
-cargo build --release --features gpu
-
-# Run GPU-accelerated benchmark
-cargo run --release --features gpu
-
-# Combine GPU with other optimizations
-cargo run --release --features gpu,parallel,vectorized
-
-# Maximum performance with all features
-RUSTFLAGS="-C target-cpu=native -C opt-level=3" \
-  cargo run --release --features blis,parallel,vectorized,gpu
+docker build -t matmul .                                  # features avx2,blis by default
+docker build --build-arg FEATURES="blis" -t matmul .
+docker run --rm -e OMP_NUM_THREADS=2 -e BLIS_NUM_THREADS=2 matmul
 ```
 
-## Benchmarking
+`-C target-cpu=native` tunes the binary for the machine that builds the image.
 
-### Comprehensive Benchmark
-
-Tests all feature combinations with various RUSTFLAGS:
-
-```bash
-./benchmark_all.sh
-```
-
-Results stored in `results/` (created automatically) with metadata:
-- `bench_*.json` - Performance metrics
-- `build_info_*.json` - Build configuration
-
-### Fast Benchmark
-
-Finds and runs the fastest configuration:
-
-```bash
-./benchmark_fastest.sh
-```
-
-Outputs:
-- `results/fastest_run_*.json` - Best performance results
-- `results/fastest_config_*.json` - Optimal configuration
-
-### Analysis
-
-```bash
-# Analyze all benchmark results
-python3 analyze_results.py
-
-# Analyze fastest configuration
-python3 analyze_fastest.py
-
-# Reproduce fastest benchmark
-python3 analyze_fastest.py reproduce
-```
-
-## Workload Specification
-
-JSON format for custom matrix sizes:
-
-```json
-{
-  "workload_id": "matmul_2048_fp32",
-  "type": "matrix_multiplication",
-  "parameters": {
-    "shapes": {
-      "M": 2048,
-      "N": 2048,
-      "K": 2048
-    },
-    "precision": "fp32",
-    "layout": "row_major"
-  },
-  "constraints": {
-    "max_time_ms": 10000,
-    "max_memory_mb": 1024
-  },
-  "validation": {
-    "seed": 42,
-    "tolerance": 1e-5
-  }
-}
-```
-
-## Output Format
-
-```json
-{
-  "latency_ms": 45.23,
-  "throughput_gflops": 47.56,
-  "ops_per_second": 4.756e10,
-  "output_hash": "a1b2c3d4...",
-  "max_error": 1.23e-6,
-  "correctness": true,
-  "workload_info": {
-    "matrix_size": [1024, 1024, 1024],
-    "total_ops": 2147483648,
-    "memory_usage_mb": 0.012
-  },
-  "performance_analysis": {
-    "speedup_vs_naive": 125.4,
-    "blas_speedup": 98.2,
-    "tiled_speedup": 45.6,
-    "vectorized_speedup": 67.8,
-    "parallel_speedup": 89.3,
-    "gpu_speedup": 156.7,
-    "memory_bandwidth_gbps": 23.45,
-    "compute_efficiency": 0.476
-  }
-}
-```
-
-## Docker Support
-
-```bash
-# Build with default features
-docker build -t matmul .
-
-# Build with specific features
-docker build --build-arg FEATURES="blis,parallel" -t matmul .
-
-# Run benchmark
-docker run matmul "cargo run --release"
-
-# Run with custom workload
-docker run -v $(pwd)/tests:/app/tests matmul \
-  "cargo run --release -- --workload /app/tests/test_workload.json"
-```
-
-## Optimization Flags
-
-Recommended RUSTFLAGS for maximum performance:
-
-```bash
-RUSTFLAGS="-C target-cpu=native -C opt-level=3 -C codegen-units=1" \
-  cargo build --release --features blis,parallel,vectorized,gpu
-```
-
-## Architecture
+## Layout
 
 ```
-matmul/
-├── src/
-│   ├── main.rs              # Entry point and orchestration
-│   ├── bench.rs             # Benchmarking infrastructure
-│   ├── validate.rs          # Correctness validation
-│   └── matmul/
-│       ├── mod.rs           # Module exports
-│       ├── naive.rs         # Basic implementation
-│       ├── optimized.rs     # C kernel wrapper
-│       ├── tiled.rs         # Cache-optimized
-│       ├── vectorized.rs    # SIMD implementation
-│       ├── parallel.rs      # Multi-threaded
-│       ├── blis.rs          # BLAS integration
-│       └── gpu.rs           # GPU backend
-├── kernels/
-│   ├── matmul_kernel.c      # Optimized C kernel
-│   ├── matmul_kernel.h      # Kernel header
-│   └── tt_xla_backend.c     # GPU/XLA backend
-├── tests/
-│   ├── test_workload.json   # Standard test case
-│   └── small_test.json      # Small matrix test
-├── build.rs                 # Build script
-├── benchmark_all.sh         # Comprehensive benchmark
-├── benchmark_fastest.sh     # Fast configuration finder
-├── analyze_results.py       # Result analysis
-├── analyze_fastest.py       # Fastest config analysis
-├── setup.sh                 # Environment setup
-├── rustfmt.toml             # Rust formatting config
-└── results/                 # Benchmark outputs (auto-created)
+src/
+  main.rs            harness: timing, validation, report
+  bench.rs           report structures (schema v2)
+  validate.rs        error metrics, output hash
+  matmul/
+    mod.rs           backend registry + correctness tests
+    naive.rs tiled.rs vectorized.rs parallel.rs
+    c_packed.rs      FFI to kernels/matmul_kernel.c
+    avx2_blis.rs     FFI to kernels/avx2_blis_kernel.c   (feature avx2)
+    blis.rs          FFI to cblas_sgemm                  (feature blis)
+kernels/
+  matmul_kernel.c/.h tiled C kernel with packing; RVV path on RISC-V
+  avx2_blis_kernel.c BLIS-style AVX2/FMA kernel with OpenMP
+tests/*.json         workload definitions
+results/             benchmark reports
 ```
 
-## Performance Tips
+## Next steps
 
-1. **Enable native CPU features**: Use `-C target-cpu=native`
-2. **Combine features**: `blis,parallel,vectorized,gpu` often performs best
-3. **Tune matrix size**: Performance varies with cache sizes
-4. **Use BLIS**: Typically fastest for CPU-only workloads
-5. **Profile first**: Run `benchmark_fastest.sh` to find optimal config
-
-## Troubleshooting
-
-### BLIS not found
-
-```bash
-# macOS
-brew install blis
-export LIBRARY_PATH=/opt/homebrew/lib:$LIBRARY_PATH
-
-# Linux
-sudo apt install libblis-dev
-```
-
-### GPU feature build fails
-
-Ensure OpenMP is installed:
-
-```bash
-# macOS
-brew install libomp
-
-# Linux
-sudo apt install libomp-dev
-```
-
-### Cross-compilation to RISC-V
-
-The build script automatically detects RISC-V targets and applies appropriate flags (`-march=rv64gcv`).
+- Vectorise the edge tiles so odd sizes run as fast as multiples of 6 × 16.
+- Pack A as well as B, and tune MC/KC to this cache hierarchy, to close the single-thread gap to BLIS.
+- Add a peak-FMA microbenchmark and a roofline plot so results are reported as % of measured peak.
+- Measure the RVV path on real RISC-V hardware.
 
 ## License
 
 Dual-licensed under MIT or Apache 2.0 at your option.
-
-## Contributing
-
-1. Add new implementations in `src/matmul/`
-2. Update `mod.rs` to export new modules
-3. Add benchmarking in `main.rs`
-4. Run `benchmark_all.sh` to validate
-5. Update this README with new features

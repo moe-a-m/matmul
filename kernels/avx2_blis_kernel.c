@@ -1,9 +1,21 @@
-// tt_matmul_blis.c
+// avx2_blis_kernel.c
+//
+// BLIS-style packed SGEMM for x86-64 CPUs with AVX2 + FMA, parallelised with OpenMP.
+//   C (MxN) = A (MxK) * B (KxN), all row-major fp32.
+//
+// Structure (Goto / van de Geijn): loop over NC-wide column panels (split across
+// OpenMP threads) -> KC-deep slices of K (pack B into [jr][k][NR]) -> MC rows ->
+// NR columns -> MR rows, with a 6x16 register-blocked AVX2/FMA microkernel.
+// Edge tiles that are not full 6x16 blocks fall back to a scalar loop.
+//
+// History: this file was previously named tt_xla_backend.c and exposed through the
+// `gpu` Cargo feature. It has always been a CPU kernel; it never ran on a GPU or on
+// Tenstorrent hardware. The feature is now called `avx2`.
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <immintrin.h>
 #include <omp.h>
+#include <immintrin.h>
 
 #define CACHELINE 64
 
@@ -77,12 +89,14 @@ static inline void microkernel_6x16(
         _mm256_storeu_ps(&C[i * ldc + 0], c[i][0]);
         _mm256_storeu_ps(&C[i * ldc + 8], c[i][1]);
     }
+
+
 }
 
 // ------------------------------------------------------------
 // Full GEMM with BLIS-style blocking
 // ------------------------------------------------------------
-void tt_matmul_c(
+void avx2_blis_matmul_c(
     const float* A,
     const float* B,
     float* C,
@@ -100,7 +114,7 @@ void tt_matmul_c(
         #pragma omp for schedule(static)
         for (size_t jc = 0; jc < N; jc += NC) {
             if (!PB) continue;  // Skip if allocation failed
-            
+
             size_t nc = (jc + NC <= N) ? NC : N - jc;
 
             for (size_t pc = 0; pc < K; pc += KC) {

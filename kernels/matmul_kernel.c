@@ -5,7 +5,7 @@
 static inline uint64_t read_cycle(void) {
 #if defined(__riscv)
     uint64_t x;
-    asm volatile("read_cycle() %0" : "=r"(x));
+    asm volatile("rdcycle %0" : "=r"(x));
     return x;
 #else
     return 0;
@@ -15,7 +15,7 @@ static inline uint64_t read_cycle(void) {
 static inline uint64_t read_instret(void) {
 #if defined(__riscv)
     uint64_t x;
-    asm volatile("read_instret() %0" : "=r"(x));
+    asm volatile("rdinstret %0" : "=r"(x));
     return x;
 #else
     return 0;
@@ -76,24 +76,24 @@ void matmul_kernel_c(const float *A, const float *B, float *C, size_t m,
 
           while (j < nt) {
 #ifdef __riscv_vector
-            size_t vl = vsetvl_e32m1(nt - j);
+            size_t vl = RVV(vsetvl_e32m1)(nt - j);
 
 #if UNROLL == 4
             vfloat32m1_t acc0 =
-                vle32_v_f32m1(&C[(ii + i) * n + (jj + j + 0 * vl)], vl);
+                RVV(vle32_v_f32m1)(&C[(ii + i) * n + (jj + j + 0 * vl)], vl);
             vfloat32m1_t acc1 =
-                vle32_v_f32m1(&C[(ii + i) * n + (jj + j + 1 * vl)], vl);
+                RVV(vle32_v_f32m1)(&C[(ii + i) * n + (jj + j + 1 * vl)], vl);
             vfloat32m1_t acc2 =
-                vle32_v_f32m1(&C[(ii + i) * n + (jj + j + 2 * vl)], vl);
+                RVV(vle32_v_f32m1)(&C[(ii + i) * n + (jj + j + 2 * vl)], vl);
             vfloat32m1_t acc3 =
-                vle32_v_f32m1(&C[(ii + i) * n + (jj + j + 3 * vl)], vl);
+                RVV(vle32_v_f32m1)(&C[(ii + i) * n + (jj + j + 3 * vl)], vl);
 #elif UNROLL == 2
             vfloat32m1_t acc0 =
-                vle32_v_f32m1(&C[(ii + i) * n + (jj + j + 0 * vl)], vl);
+                RVV(vle32_v_f32m1)(&C[(ii + i) * n + (jj + j + 0 * vl)], vl);
             vfloat32m1_t acc1 =
-                vle32_v_f32m1(&C[(ii + i) * n + (jj + j + 1 * vl)], vl);
+                RVV(vle32_v_f32m1)(&C[(ii + i) * n + (jj + j + 1 * vl)], vl);
 #else
-            vfloat32m1_t acc0 = vle32_v_f32m1(&C[(ii + i) * n + (jj + j)], vl);
+            vfloat32m1_t acc0 = RVV(vle32_v_f32m1)(&C[(ii + i) * n + (jj + j)], vl);
 #endif
 
             for (size_t l = 0; l < kt; l++) {
@@ -102,37 +102,37 @@ void matmul_kernel_c(const float *A, const float *B, float *C, size_t m,
               __builtin_prefetch(&Bp[(l + 1) * nt + j], 0, 3);
 
 #if UNROLL == 4
-              vfloat32m1_t b0 = vle32_v_f32m1(&Bp[l * nt + j + 0 * vl], vl);
-              vfloat32m1_t b1 = vle32_v_f32m1(&Bp[l * nt + j + 1 * vl], vl);
-              vfloat32m1_t b2 = vle32_v_f32m1(&Bp[l * nt + j + 2 * vl], vl);
-              vfloat32m1_t b3 = vle32_v_f32m1(&Bp[l * nt + j + 3 * vl], vl);
-              acc0 = vfmacc_vf_f32m1(acc0, aval, b0, vl);
-              acc1 = vfmacc_vf_f32m1(acc1, aval, b1, vl);
-              acc2 = vfmacc_vf_f32m1(acc2, aval, b2, vl);
-              acc3 = vfmacc_vf_f32m1(acc3, aval, b3, vl);
+              vfloat32m1_t b0 = RVV(vle32_v_f32m1)(&Bp[l * nt + j + 0 * vl], vl);
+              vfloat32m1_t b1 = RVV(vle32_v_f32m1)(&Bp[l * nt + j + 1 * vl], vl);
+              vfloat32m1_t b2 = RVV(vle32_v_f32m1)(&Bp[l * nt + j + 2 * vl], vl);
+              vfloat32m1_t b3 = RVV(vle32_v_f32m1)(&Bp[l * nt + j + 3 * vl], vl);
+              acc0 = RVV(vfmacc_vf_f32m1)(acc0, aval, b0, vl);
+              acc1 = RVV(vfmacc_vf_f32m1)(acc1, aval, b1, vl);
+              acc2 = RVV(vfmacc_vf_f32m1)(acc2, aval, b2, vl);
+              acc3 = RVV(vfmacc_vf_f32m1)(acc3, aval, b3, vl);
 #elif UNROLL == 2
-              vfloat32m1_t b0 = vle32_v_f32m1(&Bp[l * nt + j + 0 * vl], vl);
-              vfloat32m1_t b1 = vle32_v_f32m1(&Bp[l * nt + j + 1 * vl], vl);
-              acc0 = vfmacc_vf_f32m1(acc0, aval, b0, vl);
-              acc1 = vfmacc_vf_f32m1(acc1, aval, b1, vl);
+              vfloat32m1_t b0 = RVV(vle32_v_f32m1)(&Bp[l * nt + j + 0 * vl], vl);
+              vfloat32m1_t b1 = RVV(vle32_v_f32m1)(&Bp[l * nt + j + 1 * vl], vl);
+              acc0 = RVV(vfmacc_vf_f32m1)(acc0, aval, b0, vl);
+              acc1 = RVV(vfmacc_vf_f32m1)(acc1, aval, b1, vl);
 #else
-              vfloat32m1_t b0 = vle32_v_f32m1(&Bp[l * nt + j], vl);
-              acc0 = vfmacc_vf_f32m1(acc0, aval, b0, vl);
+              vfloat32m1_t b0 = RVV(vle32_v_f32m1)(&Bp[l * nt + j], vl);
+              acc0 = RVV(vfmacc_vf_f32m1)(acc0, aval, b0, vl);
 #endif
             }
 
 #if UNROLL == 4
-            vse32_v_f32m1(&C[(ii + i) * n + (jj + j + 0 * vl)], acc0, vl);
-            vse32_v_f32m1(&C[(ii + i) * n + (jj + j + 1 * vl)], acc1, vl);
-            vse32_v_f32m1(&C[(ii + i) * n + (jj + j + 2 * vl)], acc2, vl);
-            vse32_v_f32m1(&C[(ii + i) * n + (jj + j + 3 * vl)], acc3, vl);
+            RVV(vse32_v_f32m1)(&C[(ii + i) * n + (jj + j + 0 * vl)], acc0, vl);
+            RVV(vse32_v_f32m1)(&C[(ii + i) * n + (jj + j + 1 * vl)], acc1, vl);
+            RVV(vse32_v_f32m1)(&C[(ii + i) * n + (jj + j + 2 * vl)], acc2, vl);
+            RVV(vse32_v_f32m1)(&C[(ii + i) * n + (jj + j + 3 * vl)], acc3, vl);
             j += 4 * vl;
 #elif UNROLL == 2
-            vse32_v_f32m1(&C[(ii + i) * n + (jj + j + 0 * vl)], acc0, vl);
-            vse32_v_f32m1(&C[(ii + i) * n + (jj + j + 1 * vl)], acc1, vl);
+            RVV(vse32_v_f32m1)(&C[(ii + i) * n + (jj + j + 0 * vl)], acc0, vl);
+            RVV(vse32_v_f32m1)(&C[(ii + i) * n + (jj + j + 1 * vl)], acc1, vl);
             j += 2 * vl;
 #else
-            vse32_v_f32m1(&C[(ii + i) * n + (jj + j)], acc0, vl);
+            RVV(vse32_v_f32m1)(&C[(ii + i) * n + (jj + j)], acc0, vl);
             j += vl;
 #endif
 

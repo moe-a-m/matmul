@@ -1,27 +1,33 @@
 use clap::Parser;
 use serde::Deserialize;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 mod bench;
 mod matmul;
 mod validate;
 
-use bench::{Metrics, PerformanceAnalysis, WorkloadInfo};
-use matmul::{blis, gpu, naive, optimized, parallel, tiled, vectorized};
-use validate::compute_hash;
+use bench::{BackendResult, BuildInfo, Report, Settings, SystemInfo, WorkloadInfo};
+use matmul::{Backend, REFERENCE, backends};
+use validate::{compare, compute_hash};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+/// Benchmark every compiled matmul backend and check each one against a naive reference.
 #[derive(Parser)]
 struct Args {
+    /// JSON workload file (see tests/*.json). Default: 1024 x 1024 x 1024.
     #[arg(long)]
     workload: Option<String>,
+    /// Write the JSON report here instead of stdout.
     #[arg(long)]
     output: Option<String>,
     #[arg(long, default_value = "3")]
     warmup_runs: usize,
-    #[arg(long, default_value = "5")]
+    #[arg(long, default_value = "10")]
     bench_runs: usize,
+    /// Maximum allowed max|c - ref| / max|ref| for a backend to count as correct.
+    #[arg(long, default_value = "1e-4")]
+    tolerance: f32,
 }
 
 #[derive(Deserialize)]
@@ -44,244 +50,224 @@ struct Shapes {
     k: usize,
 }
 
-impl Default for WorkloadSpec {
-    fn default() -> Self {
-        Self {
-            parameters: Parameters {
-                shapes: Shapes {
-                    m: 1024,
-                    n: 1024,
-                    k: 1024,
-                },
-            },
-        }
+fn load_shape(path: Option<String>) -> Result<(usize, usize, usize)> {
+    match path {
+        Some(path) => {
+            let spec: WorkloadSpec = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+            let s = spec.parameters.shapes;
+            Ok((s.m, s.n, s.k))
+        },
+        None => Ok((1024, 1024, 1024)),
     }
-}
-
-fn benchmark_kernel<F>(kernel: F, runs: usize) -> f64
-where
-    F: Fn(),
-{
-    (0..runs)
-        .map(|_| {
-            let start = Instant::now();
-            kernel();
-            start.elapsed().as_secs_f64()
-        })
-        .sum::<f64>()
-        / runs as f64
 }
 
 fn init_matrices(m: usize, n: usize, k: usize) -> (Vec<f32>, Vec<f32>) {
     let a = (0..m * k).map(|i| ((i * 7) % 100) as f32 / 100.0).collect();
-
     let b = (0..k * n)
         .map(|i| ((i * 11) % 100) as f32 / 100.0)
         .collect();
-
     (a, b)
 }
 
-#[derive(Debug)]
-struct BenchmarkResults {
-    opt_time: f64,
-    naive_time: f64,
-    blas_time: f64,
-    tiled_time: f64,
-    vectorized_time: f64,
-    parallel_time: f64,
-    gpu_time: f64,
-}
-
-impl BenchmarkResults {
-    fn new(
-        a: &[f32],
-        b: &[f32],
-        m: usize,
-        n: usize,
-        k: usize,
-        warmup_runs: usize,
-        bench_runs: usize,
-    ) -> Self {
-        // Warmup
-        let mut c_warmup = vec![0.0f32; m * n];
-        for _ in 0..warmup_runs {
-            optimized::matmul(a, b, &mut c_warmup, m, n, k);
-        }
-
-        let opt_time = Self::benchmark_impl(
-            || {
-                let mut c = vec![0.0f32; m * n];
-                optimized::matmul(a, b, &mut c, m, n, k);
-            },
-            bench_runs,
-        );
-
-        let naive_time = Self::benchmark_impl(
-            || {
-                let mut c = vec![0.0f32; m * n];
-                naive::matmul(a, b, &mut c, m, n, k);
-            },
-            1,
-        );
-
-        let blas_time = if cfg!(feature = "blis") {
-            Self::benchmark_impl(
-                || {
-                    let mut c = vec![0.0f32; m * n];
-                    blis::matmul(a, b, &mut c, m, n, k);
-                },
-                bench_runs,
-            )
-        } else {
-            naive_time
-        };
-
-        let tiled_time = Self::benchmark_impl(
-            || {
-                let mut c = vec![0.0f32; m * n];
-                tiled::matmul(a, b, &mut c, m, n, k);
-            },
-            bench_runs,
-        );
-
-        let vectorized_time = Self::benchmark_impl(
-            || {
-                let mut c = vec![0.0f32; m * n];
-                vectorized::matmul(a, b, &mut c, m, n, k);
-            },
-            bench_runs,
-        );
-
-        let parallel_time = Self::benchmark_impl(
-            || {
-                let mut c = vec![0.0f32; m * n];
-                parallel::matmul(a, b, &mut c, m, n, k);
-            },
-            bench_runs,
-        );
-
-        let gpu_time = Self::benchmark_impl(
-            || {
-                let mut c = vec![0.0f32; m * n];
-                gpu::matmul(a, b, &mut c, m, n, k);
-            },
-            bench_runs,
-        );
-
-        Self {
-            opt_time,
-            naive_time,
-            blas_time,
-            tiled_time,
-            vectorized_time,
-            parallel_time,
-            gpu_time,
-        }
-    }
-
-    fn benchmark_impl<F>(kernel: F, runs: usize) -> f64
-    where
-        F: Fn(),
-    {
-        benchmark_kernel(kernel, runs)
-    }
-}
-
-fn compute_correctness(
+/// Runs a backend `warmup` + `runs` times; returns (sorted timings in seconds, last output).
+fn time_backend(
+    backend: &Backend,
     a: &[f32],
     b: &[f32],
-    m: usize,
-    n: usize,
-    k: usize,
-) -> (Vec<f32>, Vec<f32>, f32) {
-    let mut c_opt = vec![0.0f32; m * n];
-    let mut c_naive = vec![0.0f32; m * n];
-
-    optimized::matmul(a, b, &mut c_opt, m, n, k);
-    naive::matmul(a, b, &mut c_naive, m, n, k);
-
-    let max_error = c_opt
-        .iter()
-        .zip(&c_naive)
-        .map(|(a, b)| (a - b).abs())
-        .fold(0.0, f32::max);
-
-    (c_opt, c_naive, max_error)
+    dims: (usize, usize, usize),
+    warmup: usize,
+    runs: usize,
+) -> (Vec<f64>, Vec<f32>) {
+    let (m, n, k) = dims;
+    let mut c = vec![0.0f32; m * n];
+    for _ in 0..warmup {
+        (backend.run)(a, b, &mut c, m, n, k);
+    }
+    let mut times: Vec<f64> = (0..runs.max(1))
+        .map(|_| {
+            let start = Instant::now();
+            (backend.run)(a, b, &mut c, m, n, k);
+            start.elapsed().as_secs_f64()
+        })
+        .collect();
+    times.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    (times, c)
 }
 
-impl From<(BenchmarkResults, &[f32], f32, usize, usize, usize)> for Metrics {
-    fn from(
-        (results, c_opt, max_error, m, n, k): (BenchmarkResults, &[f32], f32, usize, usize, usize),
-    ) -> Self {
-        let total_ops = 2u64 * m as u64 * n as u64 * k as u64;
-        let memory_mb = (m * k + k * n + m * n) as f64 * 4.0 / (1024.0 * 1024.0 * 1024.0);
-        let gflops = total_ops as f64 / 1e9 / results.opt_time;
-        let bandwidth_gbps = memory_mb * 1024.0 / results.opt_time;
-
-        Self {
-            latency_ms: results.opt_time * 1000.0,
-            throughput_gflops: gflops,
-            ops_per_second: total_ops as f64 / results.opt_time,
-            output_hash: compute_hash(c_opt),
-            max_error,
-            correctness: max_error < 1e-3,
-            workload_info: WorkloadInfo {
-                matrix_size: [m, n, k],
-                total_ops,
-                memory_usage_mb: memory_mb,
-            },
-            performance_analysis: PerformanceAnalysis {
-                speedup_vs_naive: results.naive_time / results.opt_time,
-                blas_speedup: results.naive_time / results.blas_time,
-                tiled_speedup: results.naive_time / results.tiled_time,
-                vectorized_speedup: results.naive_time / results.vectorized_time,
-                parallel_speedup: results.naive_time / results.parallel_time,
-                gpu_speedup: results.naive_time / results.gpu_time,
-                memory_bandwidth_gbps: bandwidth_gbps,
-                compute_efficiency: gflops / 100.0,
-            },
-        }
+fn summarize(
+    backend: &Backend,
+    times: &[f64],
+    flop: u64,
+    naive_best: f64,
+    errors: (f32, f32),
+    tolerance: f32,
+) -> BackendResult {
+    let best = times[0];
+    let median = times[times.len() / 2];
+    BackendResult {
+        name: backend.name,
+        description: backend.description,
+        runs: times.len(),
+        best_ms: best * 1e3,
+        median_ms: median * 1e3,
+        gflops_best: flop as f64 / best / 1e9,
+        gflops_median: flop as f64 / median / 1e9,
+        speedup_vs_naive: naive_best / best,
+        max_abs_error: errors.0,
+        rel_error: errors.1,
+        correct: errors.1 <= tolerance,
     }
 }
 
-fn load_workload(path: Option<String>) -> Result<WorkloadSpec> {
-    match path {
-        Some(path) => {
-            let data = std::fs::read_to_string(path)?;
-            Ok(serde_json::from_str(&data)?)
-        },
-        None => Ok(WorkloadSpec::default()),
+fn cpu_model() -> String {
+    if let Ok(info) = std::fs::read_to_string("/proc/cpuinfo")
+        && let Some(line) = info.lines().find(|l| l.starts_with("model name"))
+        && let Some((_, v)) = line.split_once(':')
+    {
+        return v.trim().to_string();
     }
+    std::process::Command::new("sysctl")
+        .args(["-n", "machdep.cpu.brand_string"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".into())
 }
 
-fn output_results(metrics: &Metrics, output_path: Option<String>) -> Result<()> {
-    let json = serde_json::to_string_pretty(metrics)?;
-
-    match output_path {
-        Some(path) => std::fs::write(path, json).map_err(Into::into),
-        None => {
-            print!("{}", json);
-            Ok(())
-        },
+fn compiled_features() -> Vec<&'static str> {
+    let mut f = Vec::new();
+    if cfg!(feature = "avx2") {
+        f.push("avx2");
     }
+    if cfg!(feature = "blis") {
+        f.push("blis");
+    }
+    f
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let spec = load_workload(args.workload)?;
-    let (m, n, k) = (
-        spec.parameters.shapes.m,
-        spec.parameters.shapes.n,
-        spec.parameters.shapes.k,
+    let (m, n, k) = load_shape(args.workload)?;
+    let dims = (m, n, k);
+    let flop = 2 * (m as u64) * (n as u64) * (k as u64);
+    let (a, b) = init_matrices(m, n, k);
+
+    // The naive reference is slow; time it once (plus one warm-up) on large problems.
+    let (ref_warmup, ref_runs) = if flop > 200_000_000 {
+        (0, 1)
+    } else {
+        (args.warmup_runs, args.bench_runs)
+    };
+    let (ref_times, reference_out) = time_backend(&REFERENCE, &a, &b, dims, ref_warmup, ref_runs);
+    let naive_best = ref_times[0];
+    let reference = summarize(
+        &REFERENCE,
+        &ref_times,
+        flop,
+        naive_best,
+        (0.0, 0.0),
+        args.tolerance,
     );
 
-    let (a, b) = init_matrices(m, n, k);
-    let results = BenchmarkResults::new(&a, &b, m, n, k, args.warmup_runs, args.bench_runs);
-    let (c_opt, _c_naive, max_error) = compute_correctness(&a, &b, m, n, k);
+    let mut results: Vec<BackendResult> = Vec::new();
+    let mut fastest: Option<(usize, Vec<f32>)> = None;
+    for backend in backends() {
+        let (times, out) = time_backend(&backend, &a, &b, dims, args.warmup_runs, args.bench_runs);
+        let result = summarize(
+            &backend,
+            &times,
+            flop,
+            naive_best,
+            compare(&out, &reference_out),
+            args.tolerance,
+        );
+        let is_faster = fastest
+            .as_ref()
+            .is_none_or(|(i, _)| result.best_ms < results[*i].best_ms);
+        if result.correct && is_faster {
+            fastest = Some((results.len(), out));
+        }
+        results.push(result);
+    }
 
-    let metrics = Metrics::from((results, c_opt.as_slice(), max_error, m, n, k));
-    output_results(&metrics, args.output)?;
+    eprintln!(
+        "{m}x{n}x{k} fp32 | {} | features: {:?}",
+        cpu_model(),
+        compiled_features()
+    );
+    eprintln!(
+        "{:<12} {:>10} {:>10} {:>9} {:>10} {:>8}",
+        "backend", "best ms", "GFLOPS", "vs naive", "rel err", "correct"
+    );
+    for r in std::iter::once(&reference).chain(results.iter()) {
+        eprintln!(
+            "{:<12} {:>10.2} {:>10.2} {:>8.1}x {:>10.2e} {:>8}",
+            r.name, r.best_ms, r.gflops_best, r.speedup_vs_naive, r.rel_error, r.correct
+        );
+    }
 
+    let (fastest_name, latency, gflops, hash) = match &fastest {
+        Some((i, out)) => (
+            Some(results[*i].name.to_string()),
+            Some(results[*i].best_ms),
+            Some(results[*i].gflops_best),
+            Some(compute_hash(out)),
+        ),
+        None => (None, None, None, None),
+    };
+
+    let report = Report {
+        schema_version: 2,
+        timestamp_unix: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+        workload: WorkloadInfo {
+            m,
+            n,
+            k,
+            flop,
+            precision: "fp32",
+            input_bytes: ((m * k + k * n) * 4) as u64,
+        },
+        system: SystemInfo {
+            cpu_model: cpu_model(),
+            logical_cpus: std::thread::available_parallelism()
+                .map(|p| p.get())
+                .unwrap_or(1),
+            os: std::env::consts::OS,
+            arch: std::env::consts::ARCH,
+            omp_num_threads: std::env::var("OMP_NUM_THREADS").ok(),
+            blis_num_threads: std::env::var("BLIS_NUM_THREADS").ok(),
+            rayon_threads: rayon::current_num_threads(),
+        },
+        build: BuildInfo {
+            features: compiled_features(),
+            rustc: env!("MATMUL_RUSTC_VERSION"),
+            rustflags: env!("MATMUL_RUSTFLAGS"),
+            target: env!("MATMUL_TARGET"),
+            git_commit: env!("MATMUL_GIT_COMMIT"),
+            profile: if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+        },
+        settings: Settings {
+            warmup_runs: args.warmup_runs,
+            bench_runs: args.bench_runs,
+            tolerance: args.tolerance,
+        },
+        reference,
+        backends: results,
+        fastest_correct_backend: fastest_name,
+        latency_ms: latency,
+        throughput_gflops: gflops,
+        output_hash: hash,
+    };
+
+    let json = serde_json::to_string_pretty(&report)?;
+    match args.output {
+        Some(path) => std::fs::write(path, json)?,
+        None => println!("{json}"),
+    }
     Ok(())
 }

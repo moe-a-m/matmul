@@ -11,7 +11,7 @@ if command -v apt &> /dev/null; then
     sudo apt install -y libblis-dev libblis-openmp-dev
 elif command -v brew &> /dev/null; then
     echo "Installing BLIS via Homebrew..."
-    brew install blis
+    brew install blis libomp
 else
     echo "Package manager not supported. Please install BLIS manually."
     exit 1
@@ -24,8 +24,10 @@ if ! command -v rustc &> /dev/null; then
     source ~/.cargo/env
 fi
 
-# Build the project
-echo "Building project..."
-cargo build --release
+# Build and test the project (avx2 needs x86-64; drop it on other CPUs)
+echo "Building and testing..."
+features="blis"
+if [ "$(uname -m)" = "x86_64" ]; then features="avx2,blis"; fi
+cargo test --release --features "$features"
 
 echo "Setup complete!"

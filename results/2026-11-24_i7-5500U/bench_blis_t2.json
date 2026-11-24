@@ -1,0 +1,120 @@
+{
+  "schema_version": 2,
+  "timestamp_unix": 1795493134,
+  "workload": {
+    "m": 1024,
+    "n": 1024,
+    "k": 1024,
+    "flop": 2147483648,
+    "precision": "fp32",
+    "input_bytes": 8388608
+  },
+  "system": {
+    "cpu_model": "Intel(R) Core(TM) i7-5500U CPU @ 2.40GHz",
+    "logical_cpus": 4,
+    "os": "linux",
+    "arch": "x86_64",
+    "omp_num_threads": "2",
+    "blis_num_threads": "2",
+    "rayon_threads": 2
+  },
+  "build": {
+    "features": [
+      "blis"
+    ],
+    "rustc": "rustc 1.96.0-nightly (20f19f461 2026-03-21)",
+    "rustflags": "-C target-cpu=native",
+    "target": "x86_64-unknown-linux-gnu",
+    "git_commit": "0ee78f2-dirty",
+    "profile": "release"
+  },
+  "settings": {
+    "warmup_runs": 3,
+    "bench_runs": 10,
+    "tolerance": 0.0001
+  },
+  "reference": {
+    "name": "naive",
+    "description": "Rust triple loop (reference)",
+    "runs": 1,
+    "best_ms": 7252.038061,
+    "median_ms": 7252.038061,
+    "gflops_best": 0.2961213978658957,
+    "gflops_median": 0.2961213978658957,
+    "speedup_vs_naive": 1.0,
+    "max_abs_error": 0.0,
+    "rel_error": 0.0,
+    "correct": true
+  },
+  "backends": [
+    {
+      "name": "tiled",
+      "description": "Rust, 64x64x64 cache blocking",
+      "runs": 10,
+      "best_ms": 1834.95779,
+      "median_ms": 1860.167125,
+      "gflops_best": 1.170317736845598,
+      "gflops_median": 1.1544573705978165,
+      "speedup_vs_naive": 3.9521552487591554,
+      "max_abs_error": 0.0,
+      "rel_error": 0.0,
+      "correct": true
+    },
+    {
+      "name": "vectorized",
+      "description": "Rust, cache blocking + 4-wide accumulators (relies on auto-vectorisation)",
+      "runs": 10,
+      "best_ms": 1199.240529,
+      "median_ms": 1202.1475770000002,
+      "gflops_best": 1.7907030291835644,
+      "gflops_median": 1.7863727291778253,
+      "speedup_vs_naive": 6.047192273469271,
+      "max_abs_error": 0.00061035156,
+      "rel_error": 0.000002256254,
+      "correct": true
+    },
+    {
+      "name": "parallel",
+      "description": "Rust, Rayon row-parallel triple loop",
+      "runs": 10,
+      "best_ms": 3943.690101,
+      "median_ms": 4027.837387,
+      "gflops_best": 0.544536612411676,
+      "gflops_median": 0.5331604634613816,
+      "speedup_vs_naive": 1.8388965347863169,
+      "max_abs_error": 0.0,
+      "rel_error": 0.0,
+      "correct": true
+    },
+    {
+      "name": "c_packed",
+      "description": "C, tiled with A/B packing (RVV intrinsics on RISC-V)",
+      "runs": 10,
+      "best_ms": 497.188879,
+      "median_ms": 499.270694,
+      "gflops_best": 4.31925117134408,
+      "gflops_median": 4.301241137938691,
+      "speedup_vs_naive": 14.586082608255605,
+      "max_abs_error": 0.00061035156,
+      "rel_error": 0.000002256254,
+      "correct": true
+    },
+    {
+      "name": "blis",
+      "description": "BLIS library cblas_sgemm (external reference)",
+      "runs": 10,
+      "best_ms": 16.869163,
+      "median_ms": 17.393318,
+      "gflops_best": 127.30232365411372,
+      "gflops_median": 123.46601424754034,
+      "speedup_vs_naive": 429.899104122712,
+      "max_abs_error": 0.00064086914,
+      "rel_error": 0.0000023690668,
+      "correct": true
+    }
+  ],
+  "fastest_correct_backend": "blis",
+  "latency_ms": 16.869163,
+  "throughput_gflops": 127.30232365411372,
+  "output_hash": "6e9d3af45f0762e09c3ac8f9a663bc81f5c8597453e9efdbe394283e22391aa0"
+}
